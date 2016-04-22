@@ -17,7 +17,7 @@ import collections
 # STATA text will be output to
 data_directory = '/Users/worker/ASCII_DIRECTORY'
 # Name of the SAS script 
-sas_script_name = 'importing something.SAS'
+sas_script_name = 'original_SAS.sas.txt'
 # ASCII name, which will also be recoded as the dataset for STATA to save to
 base_name = 'raw ASCII name'
 
@@ -47,7 +47,7 @@ for i in range(0, len(sas)-1):
     # token for start of lines indicating how to recode missing values
     if re.search("INVALUE", line):
         # what is the name for the recode rule
-        missing_key = re.findall('INVALUE ([a-zA-Z0-9_]+) ', line)[0]
+        missing_key = re.findall('INVALUE ([a-zA-Z0-9_]+)', line)[0]
         missing_dict[missing_key] = []
         j = 1
         while True:
@@ -146,7 +146,10 @@ for i in range(0, len(sas)):
     # Note above line_start was set to False. Immediately below, this condition
     # affects how the beginning of the Stata file is written.
     if re.search("INFILE", line):
-        line_start = re.findall("FIRSTOBS=([0-9]+)", line)[0]
+        try:
+            line_start = re.findall("FIRSTOBS=([0-9]+)", line)[0]
+        except IndexError:
+            line_start = False
 
 # start writing the output file:
 if line_start:
