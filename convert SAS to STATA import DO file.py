@@ -78,10 +78,64 @@ for i in range(0, len(sas)-1):
         elif re.search("DATE", missing_key):
             types_dict[missing_key] = 'date'
 
+# Define the 'variable' class. Each variable has a variable name, label, length, and
+# type
 
-# Set up an empty dictionary. Its keys will be variable names, and each variable 
-# will have its own sub-dictionary with keys for variable label, type, recoding, etc.
+class Variable():
+    """ A Variable has a name, label, length, start point (in the raw data), end point,
+        a variable type (str, int, etc.), and a recode list for missing values
+    """
+    def __init__(self, name):
+        self.name = name
+        self.label = None
+        self.length = None
+        self.vartype = None
+        self.recode_list = None
+        self.start = None
+        self.end = None
+    
+    def get_name(self):
+        return self.name
+        
+    def add_label(self, new_label):
+        self.label = new_label
+        
+    def get_label(self):
+        return self.label
+        
+    def add_length(self, new_length):
+        self.length = new_length
+        
+    def get_length(self):
+        return self.length
+        
+    def add_vartype(self, new_vartype):
+        self.vartype = new_vartype
+        
+    def get_vartype(self):
+        return self.vartype
+        
+    def add_recode_list(self, new_recode_list):
+        self.recode_list = new_recode_list
+        
+    def get_recode_list(self):
+        return self.recode_list
+        
+    def add_start(self, new_start):
+        self.start = new_start
+        
+    def get_start(self):
+        return self.start
+    
+    def add_end(self, new_end):
+        self.end = new_end
+        
+    def get_end(self):
+        return self.end
+        
+# set up a list to hold variables
 stata_values = collections.OrderedDict()
+
 line_start = False
         
 # use indexing, so I can pull information from subsequent lines when necessary
@@ -90,11 +144,10 @@ for i in range(0, len(sas)):
     # "length=" in the line means it's a variable name. Pull the name and length
     if re.search("LENGTH=", line):
         variable_name = re.findall('([a-zA-Z0-9_]+) ', line)[0]
+        stata_var = Variable(variable_name)
+
         variable_length = int(re.findall('LENGTH=\$*([0-9]+)', line)[0])
-        # Initialize the sub-dictionary
-        stata_values[variable_name] = {}
-        # add in length
-        stata_values[variable_name]['length'] = variable_length
+        stata_var.add_length(variable_length)
         # labels start at various points. account for some that take two lines, 
         # and some only take one. They can also start 2 lines below, 3 lines below,
         # or directly below
@@ -116,8 +169,9 @@ for i in range(0, len(sas)):
         else:
             variable_label = re.findall("LABEL=\"(.*)\"", sas[i+1])[0]
         # preserver it as a hard string
-        stata_values[variable_name]['label'] = '"{}"'.format(variable_label)
-        "\"" + variable_label + "\""
+        stata_var.add_label('"{}"'.format(variable_label))
+        #globals()[variable_name] = stata_var
+        stata_values[variable_name] = stata_var
     # at the bottom of the file, the @ values indicate starting points, and the 
     # numbers and letters at the end of the line indicate variable type. Pull the 
     # starting points and use the type to convert to Stata type, using the conversion
@@ -127,20 +181,22 @@ for i in range(0, len(sas)):
         variable_name = re.findall("\@[0-9]+\s*([a-zA-Z0-9_]+) ", line)[0]
         variable_start = int(re.findall("\@([0-9]+)", line)[0])
         # base it off the next row if I can. If it's the last one, do start + length, 
-        # where length is preserved in the dictionary created above     
+        # where length is defined above as an attribute of each variable object (including
+        # the last one)    
         try:
             stop = int(re.findall("\@([0-9]+)", sas[i+1])[0]) - 1
         except IndexError:
-            stop = variable_start + stata_values[variable_name]['length']
-        stata_values[variable_name]['start'] = variable_start
-        stata_values[variable_name]['end'] = stop
+            stop = variable_start + stata_values[variable_name].get_length()
+        stata_values[variable_name].add_start(variable_start)
+        stata_values[variable_name].add_end(stop)
+
         # Find a series of characters before a period - this is the recode key
         recode_key = re.findall("(\S+)\.", line)[0]
         # pull recode key if it exists
         recode_list = missing_dict.get(recode_key, None)
-        stata_values[variable_name]['recode_list'] = recode_list
+        stata_values[variable_name].add_recode_list(recode_list)
         # pull type; if it's not in the list, assume a character type
-        stata_values[variable_name]['type'] = types_dict.get(recode_key, "char")
+        stata_values[variable_name].add_vartype(types_dict.get(recode_key, "char"))
     # the ASCII raw data might have a line or two at the top with descriptions. 
     # Pull the info in the SAS Import that says which line to start with.
     # Note above line_start was set to False. Immediately below, this condition
@@ -166,10 +222,10 @@ else:
 # lines to read in data (each line is a type, variable name, start-end, and /// 
 # to continue to next line):
 for variable in stata_values.keys():
-    new_line = '{}    {}    {}-{}  ///'.format(stata_values[variable]['type'],
+    new_line = '{}    {}    {}-{}  ///'.format(stata_values[variable].get_vartype(),
                                                variable,
-                                               stata_values[variable]['start'],
-                                               stata_values[variable]['end'])
+                                               stata_values[variable].get_start(),
+                                               stata_values[variable].get_end())
     output_lines.append(new_line)
 
 # using data source:
@@ -177,12 +233,12 @@ output_lines.append('using ' + ascii_name)
 
 # label variables:
 for variable in stata_values.keys():
-    new_line = 'label var {}    {}'.format(variable, str(stata_values[variable]['label']))
+    new_line = 'label var {}    {}'.format(variable, str(stata_values[variable].get_label()))
     output_lines.append(new_line)
 
 # recode as needed
 for variable in stata_values.keys():
-    recode = stata_values[variable].get('recode_list')
+    recode = stata_values[variable].get_recode_list()
     if recode:
         recode = ' '.join(str(item) for item in recode)
         new_line = 'recode {}   ( {} = .)'.format(variable, recode)
